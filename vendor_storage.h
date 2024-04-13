@@ -63,7 +63,7 @@ int vendor_storage_init(void);
 /*
  * emmc_vendor_write 
  * id: item id
- * pbuf: vendor_item
+ * pbuf: write data
  * size: vendor_item.size
  * rerurn： ret>0 succes   ret<0 failed
  */
@@ -72,7 +72,7 @@ int emmc_vendor_write(uint32 id, void *pbuf, uint32 size);
 /*
  * emmc_vendor_read 
  * id: item id
- * pbuf: vendor_item
+ * pbuf: read data
  * size: vendor_item.size
  * rerurn： ret>0 succes   ret<0 failed
  */

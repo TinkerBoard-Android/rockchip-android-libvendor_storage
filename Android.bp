@@ -29,3 +29,11 @@ cc_library_shared {
     ],
     cflags: ["-Wall", "-Werror", "-Wno-unused-function"],
 }
+
+cc_binary {
+    name: "vendorstorage_test",
+    srcs: ["vendor_storage_test.c"],
+    shared_libs: ["libvendor_storage"],
+    vendor: true,
+}
+

@@ -65,6 +65,7 @@ static struct vendor_info *g_vendor;
 #define RK_MMC_MAX_DEVICES	3
 #define EMMC_MAX_PATH_LENGTH	32
 #define EMMC_DEV_PATH "/dev/block/mmcblk"
+#define UFS_DEV_PATH "/dev/block/by-name/sda"
 char emmc_path[EMMC_MAX_PATH_LENGTH];
 
 #define ALIGN(x, a)		__ALIGN_KERNEL((x), (a))
@@ -87,6 +88,7 @@ static int emmc_vendor_ops(uint8 *buffer, uint32 addr, uint32 n_sec, int write)
 		ret = fwrite(buffer, n_sec << 9, 1, emmc_device);
 	else
 		ret = fread(buffer, n_sec << 9, 1, emmc_device);
+	fflush(emmc_device);
 	fclose(emmc_device);
 	if (ret != 1)
 		return -EIO;
@@ -120,6 +122,61 @@ static int emmc_vendor_storage_init(void)
 		}
 	}
 	if (emmc_device == NULL)
+		return -ENODEV;
+
+	max_ver = 0;
+	max_index = 0;
+	for (i = 0; i < EMMC_VENDOR_PART_NUM; i++) {
+		/* read first 512 bytes */
+		p_buf = (uint8 *)g_vendor;
+		if (emmc_vendor_ops(p_buf, EMMC_VENDOR_PART_START +
+				 EMMC_VENDOR_PART_SIZE * i, 1, 0))
+			goto error_exit;
+		/* read last 512 bytes */
+		p_buf += (EMMC_VENDOR_PART_SIZE - 1) << 9;
+		if (emmc_vendor_ops(p_buf, EMMC_VENDOR_PART_START +
+				 EMMC_VENDOR_PART_SIZE * (i + 1) - 1,
+				 1, 0))
+			goto error_exit;
+
+		if (g_vendor->tag == EMMC_VENDOR_TAG &&
+		    g_vendor->version2 == g_vendor->version) {
+			if (max_ver < g_vendor->version) {
+				max_index = i;
+				max_ver = g_vendor->version;
+			}
+		}
+	}
+	if (max_ver) {
+		if (emmc_vendor_ops((uint8 *)g_vendor, EMMC_VENDOR_PART_START +
+				EMMC_VENDOR_PART_SIZE * max_index,
+				EMMC_VENDOR_PART_SIZE, 0))
+			goto error_exit;
+	} else {
+		memset((void *)g_vendor, 0, sizeof(*g_vendor));
+		g_vendor->version = 1;
+		g_vendor->tag = EMMC_VENDOR_TAG;
+		g_vendor->version2 = g_vendor->version;
+		g_vendor->free_offset = 0;
+		g_vendor->free_size = sizeof(g_vendor->data);
+		emmc_vendor_ops((uint8 *)g_vendor, EMMC_VENDOR_PART_START,
+					EMMC_VENDOR_PART_SIZE, 1);
+	}
+	return 0;
+error_exit:
+	return -EIO;
+}
+
+static int ufs_vendor_storage_init(void)
+{
+	uint32 i, max_ver, max_index;
+	uint8 *p_buf;
+	FILE *ufs_device;
+
+	memset(emmc_path,0,sizeof(emmc_path));
+	strncpy(emmc_path, UFS_DEV_PATH, EMMC_MAX_PATH_LENGTH);
+	ufs_device = fopen(emmc_path, "r");
+	if (ufs_device == NULL)
 		return -ENODEV;
 
 	max_ver = 0;
@@ -280,10 +337,16 @@ int vendor_storage_init(void)
 	g_vendor = malloc(sizeof(*g_vendor));
 	if (!g_vendor)
 		return -ENOMEM;
-	ret = emmc_vendor_storage_init();	
+
+	ret = ufs_vendor_storage_init();
+	if (!ret) {
+		return 0;
+	}
+
+	ret = emmc_vendor_storage_init();
 	if (!ret) {
 	} else {
-          	SLOGE("vendor_storage_init failed ret=%d\n",ret);
+		SLOGE("vendor_storage_init failed ret=%d\n",ret);
 		free(g_vendor);
 		g_vendor = NULL;
 	}
